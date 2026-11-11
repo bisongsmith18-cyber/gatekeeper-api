@@ -1,0 +1,323 @@
+openapi: 3.1.0
+info:
+  title: Gatekeeper API
+  version: 1.0.0
+  description: Event ticketing with transactional, capacity-safe bookings.
+servers:
+  - url: http://localhost:3000
+paths:
+  /health:
+    get:
+      summary: Check API and database health
+      responses:
+        '200':
+          description: The database is reachable.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    const: ok
+        '503':
+          $ref: '#/components/responses/ServerError'
+  /events:
+    get:
+      summary: List events
+      parameters:
+        - $ref: '#/components/parameters/After'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of events ordered by ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+    post:
+      summary: Create an event
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewEvent'
+      responses:
+        '201':
+          description: Event created.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [event]
+                properties:
+                  event:
+                    $ref: '#/components/schemas/Event'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /events/{id}:
+    get:
+      summary: Get an event
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The requested event.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [event]
+                properties:
+                  event:
+                    $ref: '#/components/schemas/Event'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /events/{id}/bookings:
+    get:
+      summary: List an event's bookings
+      parameters:
+        - $ref: '#/components/parameters/Id'
+        - $ref: '#/components/parameters/After'
+        - $ref: '#/components/parameters/Limit'
+      responses:
+        '200':
+          description: A page of bookings ordered by ID.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BookingPage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      summary: Book tickets for an event
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewBooking'
+      responses:
+        '201':
+          description: Booking created. The Location header points to the booking.
+          headers:
+            Location:
+              schema:
+                type: string
+              description: URL of the new booking.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [booking]
+                properties:
+                  booking:
+                    $ref: '#/components/schemas/Booking'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /bookings/{id}:
+    get:
+      summary: Get a booking
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '200':
+          description: The requested booking.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [booking]
+                properties:
+                  booking:
+                    $ref: '#/components/schemas/Booking'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /bookings/{id}/cancel:
+    post:
+      summary: Cancel a booking and restore its seats
+      parameters:
+        - $ref: '#/components/parameters/Id'
+      responses:
+        '204':
+          description: Booking cancelled.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    After:
+      name: after
+      in: query
+      description: Return IDs greater than this cursor.
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 20
+  schemas:
+    Event:
+      type: object
+      required: [id, name, venue, starts_at, capacity, seats_remaining, status]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        venue:
+          type: string
+        starts_at:
+          type: string
+          format: date-time
+        capacity:
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+        seats_remaining:
+          type: integer
+          minimum: 0
+        status:
+          type: string
+          enum: [on_sale, sold_out, cancelled]
+    NewEvent:
+      type: object
+      required: [name, venue, starts_at, capacity]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 150
+        venue:
+          type: string
+          minLength: 1
+          maxLength: 150
+        starts_at:
+          type: string
+          format: date-time
+        capacity:
+          type: integer
+          minimum: 0
+    Booking:
+      type: object
+      required: [id, event_id, customer_id, quantity, status, booked_at]
+      properties:
+        id:
+          type: integer
+        event_id:
+          type: integer
+        customer_id:
+          type: integer
+        quantity:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum: [confirmed, cancelled]
+        booked_at:
+          type: string
+          format: date-time
+    NewBooking:
+      type: object
+      required: [customer_id, quantity]
+      properties:
+        customer_id:
+          type: integer
+          minimum: 1
+          maximum: 2147483647
+        quantity:
+          type: integer
+          minimum: 1
+          maximum: 10
+    EventPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Event'
+        next_cursor:
+          oneOf:
+            - type: integer
+            - type: 'null'
+    BookingPage:
+      type: object
+      required: [items, next_cursor]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Booking'
+        next_cursor:
+          oneOf:
+            - type: integer
+            - type: 'null'
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+  responses:
+    BadRequest:
+      description: Invalid input or an unknown customer.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: The requested resource does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Conflict:
+      description: Not enough seats, cancelled event, or already-cancelled booking.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ServerError:
+      description: The API or its database is unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
